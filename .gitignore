@@ -5,5 +5,10 @@
 node_modules/
 .venv/
 __pycache__/
+data/
+*.db
+*.db-wal
+*.db-shm
+.pytest_cache/
 .claude/
 .cc-workbench/

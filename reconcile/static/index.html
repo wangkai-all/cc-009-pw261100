@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>订单 · 支付流水对账</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">对</div>
+      <div>
+        <h1>订单 · 支付流水对账</h1>
+        <p class="sub">北京时间结算 · 十进制金额 · 订单级多对多核对</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="dbState" class="pill muted">未计算</span>
+      <button id="recomputeBtn" class="primary">重新计算</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="results">对账结果</button>
+    <button class="tab" data-tab="daily">结算日汇总</button>
+    <button class="tab" data-tab="exceptions">异常与原始记录</button>
+    <button class="tab" data-tab="imports">导入</button>
+  </nav>
+
+  <main>
+    <!-- 对账结果 -->
+    <section id="tab-results" class="panel">
+      <div class="filters">
+        <label>结算日
+          <input type="date" id="fDate">
+        </label>
+        <label>状态
+          <select id="fStatus">
+            <option value="">全部</option>
+            <option value="MATCH">一致</option>
+            <option value="MISMATCH">有差额</option>
+            <option value="EXCEPTION">异常</option>
+          </select>
+        </label>
+        <label>币种
+          <select id="fCurrency"><option value="">全部</option></select>
+        </label>
+        <label>原因
+          <select id="fReason"><option value="">全部原因</option></select>
+        </label>
+        <label class="grow">搜索订单
+          <input type="search" id="fQ" placeholder="输入订单号，支持模糊匹配">
+        </label>
+        <button id="clearFilters" class="ghost">清空筛选</button>
+        <a id="exportResults" class="button-link" href="#">导出 CSV</a>
+      </div>
+      <div id="summary" class="summary"></div>
+      <div class="table-wrap">
+        <table id="resultsTable">
+          <thead>
+            <tr>
+              <th>结算日</th>
+              <th>订单号</th>
+              <th>币种</th>
+              <th class="num">应收</th>
+              <th class="num">支付总额</th>
+              <th class="num">有效退款</th>
+              <th class="num">净实收</th>
+              <th class="num">差额</th>
+              <th>状态</th>
+              <th class="num">版本</th>
+              <th>原因</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+      <div id="resultsEmpty" class="empty hidden">没有符合条件的对账结果。</div>
+    </section>
+
+    <!-- 结算日汇总 -->
+    <section id="tab-daily" class="panel hidden">
+      <div class="filters">
+        <label>结算日
+          <input type="date" id="dDate">
+        </label>
+        <button id="loadDaily" class="ghost">刷新</button>
+        <a id="exportDaily" class="button-link" href="#">导出汇总 CSV</a>
+      </div>
+      <p class="hint">
+        <strong>净实收合计</strong>按该结算日订单的最新结果重述（跨日退款到账后会产生新版本）；
+        <strong>跨日退款调整</strong>为退款发生日落在该日、但订单结算日在其他日期的有效退款备忘金额，
+        单独展示、不并入净实收合计，避免重复计算。
+      </p>
+      <div class="table-wrap">
+        <table id="dailyTable">
+          <thead>
+            <tr>
+              <th>结算日</th>
+              <th>币种</th>
+              <th class="num">版本</th>
+              <th class="num">订单数</th>
+              <th class="num">一致</th>
+              <th class="num">有差额</th>
+              <th class="num">异常</th>
+              <th class="num">应收合计</th>
+              <th class="num">净实收合计</th>
+              <th class="num">跨日退款调整</th>
+              <th>版本修订</th>
+            </tr>
+          </thead>
+          <tbody id="dailyBody"></tbody>
+        </table>
+      </div>
+      <div id="dailyEmpty" class="empty hidden">暂无结算日汇总。</div>
+    </section>
+
+    <!-- 异常 -->
+    <section id="tab-exceptions" class="panel hidden">
+      <div class="section-head">
+        <h2>无法归属订单的挂账异常</h2>
+        <span class="hint">找不到原支付的退款、订单文件中不存在的支付</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>类型</th><th>引用</th><th>订单号</th><th class="num">金额</th><th>币种</th><th>事件时间</th><th>原因</th><th>原始行</th></tr>
+          </thead>
+          <tbody id="standaloneBody"></tbody>
+        </table>
+      </div>
+
+      <div class="section-head">
+        <h2>同号流水冲突</h2>
+        <span class="hint">内容相同的重复事件已静默去重；同号不同内容保留首次事件并记录在这里</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>流水号</th><th>类型</th><th>批次</th><th>首次事件</th><th>冲突事件</th><th>原因</th></tr>
+          </thead>
+          <tbody id="conflictBody"></tbody>
+        </table>
+      </div>
+
+      <div class="section-head">
+        <h2>订单记录冲突</h2>
+        <span class="hint">同一订单号重复且应收/币种不同，保留首次导入版本</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>订单号</th><th>批次</th><th>冲突内容</th><th>原因</th></tr>
+          </thead>
+          <tbody id="orderConflictBody"></tbody>
+        </table>
+      </div>
+
+      <div class="section-head">
+        <h2>导入行错误</h2>
+        <span class="hint">金额非法、空流水号、表头错误等，行级报错不阻断整批导入</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>文件</th><th>行号</th><th>原始行</th><th>错误</th></tr>
+          </thead>
+          <tbody id="rowErrorBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 导入 -->
+    <section id="tab-imports" class="panel hidden">
+      <div class="import-card">
+        <h2>导入 CSV</h2>
+        <p class="hint">
+          订单表头 <code>order_id,receivable,currency</code>；支付表头
+          <code>order_id,txn_id,amount,currency,event_time</code>；退款表头
+          <code>origin_txn_id,amount,currency,event_time</code>。文件按 SHA-256 去重，
+          相同文件重复导入会整体跳过。导入成功后自动重算。
+        </p>
+        <form id="importForm" class="import-form">
+          <label>文件类型
+            <select id="importType">
+              <option value="order">订单</option>
+              <option value="payment">支付</option>
+              <option value="refund">退款</option>
+            </select>
+          </label>
+          <label class="grow">选择文件
+            <input type="file" id="importFile" accept=".csv,text/csv" required>
+          </label>
+          <button type="submit" class="primary" id="importBtn">上传并重算</button>
+        </form>
+        <div id="importMessage" class="notice hidden"></div>
+      </div>
+      <div class="section-head">
+        <h2>导入批次</h2>
+        <span class="hint">文件级去重记录</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>批次</th><th>导入时间</th><th>类型</th><th>文件</th><th class="num">行数</th><th>状态</th><th>SHA-256</th></tr>
+          </thead>
+          <tbody id="batchBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="modalTitle">流水溯源</h3>
+        <button id="modalClose" class="ghost">关闭</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
